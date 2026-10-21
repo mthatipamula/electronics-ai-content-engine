@@ -1,0 +1,33 @@
+[project]
+name = "electronics-ai-content-engine"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["common", "llm-gateway", "catalog-mcp", "content-engine"]
+
+[tool.uv.workspace]
+members = ["packages/common", "services/*"]
+
+[tool.uv.sources]
+common = { workspace = true }
+llm-gateway = { workspace = true }
+catalog-mcp = { workspace = true }
+content-engine = { workspace = true }
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = ["pytest>=8.4", "pytest-asyncio>=1.2", "ruff>=0.14", "httpx>=0.28"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = ["S101", "S311", "B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

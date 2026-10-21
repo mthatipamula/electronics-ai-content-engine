@@ -1,0 +1,26 @@
+[project]
+name = "content-engine"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "common",
+  "fastapi>=0.120",
+  "uvicorn[standard]>=0.38",
+  "langgraph>=1.0",
+  "mcp>=2.3",
+  "httpx>=0.28",
+  "asyncpg>=0.30",
+  "redis>=6.4",
+  "azure-servicebus>=7.14",
+  "azure-identity>=1.25",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

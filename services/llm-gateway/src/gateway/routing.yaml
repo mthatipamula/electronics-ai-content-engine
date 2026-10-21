@@ -1,0 +1,27 @@
+# Model tiers and the order each task tries them in. Prices are USD per 1M tokens (approximate list prices;
+# override per environment). Deployment names come from the environment so the same file works everywhere.
+tiers:
+  fast:
+    deployment_env: AZURE_OPENAI_FAST_DEPLOYMENT
+    input_per_1m: 0.40
+    output_per_1m: 1.60
+  quality:
+    deployment_env: AZURE_OPENAI_QUALITY_DEPLOYMENT
+    input_per_1m: 2.00
+    output_per_1m: 8.00
+embedding:
+  deployment_env: AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+  input_per_1m: 0.02
+  dimensions: 1536
+
+# task -> tiers in preference order; later tiers are fallbacks on throttling, timeouts or server errors.
+routes:
+  generate: [quality, fast]     # customer-facing copy: quality first
+  judge: [quality, fast]        # evaluation needs the stronger model
+  rewrite: [fast, quality]      # small edits from reviewer feedback
+  classify: [fast, quality]
+  extract: [fast, quality]
+  default: [fast, quality]
+
+# Callers with a tight latency budget skip straight to the fast tier.
+fast_if_latency_budget_ms_below: 2500
