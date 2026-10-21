@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+!.env.example
+node_modules/
+dist/
+evals/reports/
+.claude/
