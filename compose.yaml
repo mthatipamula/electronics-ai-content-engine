@@ -1,0 +1,94 @@
+# Local stack. First run: ./scripts/init-env.sh && docker compose up -d --build
+name: content-engine
+
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://phoenix:6006/v1/traces
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./scripts/init-env.sh}
+      DB_PASSWORD_GATEWAY: ${DB_PASSWORD_GATEWAY}
+      DB_PASSWORD_CATALOG: ${DB_PASSWORD_CATALOG}
+      DB_PASSWORD_CONTENT: ${DB_PASSWORD_CONTENT}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    ports: ["127.0.0.1:5433:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], interval: 3s, retries: 30 }
+
+  redis:
+    image: redis:8.2-alpine
+    ports: ["127.0.0.1:6380:6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 30 }
+
+  phoenix:   # Arize Phoenix: traces of every request, agent step and model call
+    image: arizephoenix/phoenix:version-20.24.0
+    ports: ["127.0.0.1:6006:6006"]
+
+  llm-gateway:
+    build: { context: ., args: { SERVICE: llm-gateway } }
+    command: ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *otel
+      DATABASE_URL: postgresql://gateway:${DB_PASSWORD_GATEWAY}@postgres:5432/gateway
+      REDIS_URL: redis://redis:6379/0
+      PROVIDER: ${LLM_PROVIDER:-mock}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_FAST_DEPLOYMENT: ${AZURE_OPENAI_FAST_DEPLOYMENT}
+      AZURE_OPENAI_QUALITY_DEPLOYMENT: ${AZURE_OPENAI_QUALITY_DEPLOYMENT}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+      ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN}
+      PORT: "8000"
+      BOOTSTRAP_VIRTUAL_KEYS: >-
+        [{"app": "content-engine", "budget": 25, "tiers": ["fast", "quality"], "key": "${VK_CONTENT_ENGINE}"},
+         {"app": "catalog-mcp", "budget": 5, "tiers": [], "key": "${VK_CATALOG}"}]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck: &health { test: ["CMD", "python", "-c", "import urllib.request,os; urllib.request.urlopen(f'http://localhost:{os.environ[\"PORT\"]}/healthz')"], interval: 5s, retries: 30 }
+
+  catalog-mcp:
+    build: { context: ., args: { SERVICE: catalog-mcp } }
+    command: ["uvicorn", "catalog.server:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      <<: *otel
+      DATABASE_URL: postgresql://catalog:${DB_PASSWORD_CATALOG}@postgres:5432/catalog
+      GATEWAY_URL: http://llm-gateway:8000
+      GATEWAY_KEY: ${VK_CATALOG}
+      PUBLIC_URL: http://catalog-mcp:8001
+      EMBEDDING_ID: ${LLM_PROVIDER:-mock}:${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+      SERVICE_TOKENS: >-
+        {"content-engine": {"token": "${CATALOG_TOKEN_ENGINE}", "scopes": ["catalog:read", "drafts:write"]},
+         "readonly-agent": {"token": "${CATALOG_TOKEN_READONLY}", "scopes": ["catalog:read"]}}
+    depends_on:
+      llm-gateway: { condition: service_healthy }
+    ports: ["127.0.0.1:8001:8001"]
+
+  content-engine:
+    build: { context: ., args: { SERVICE: content-engine } }
+    command: ["uvicorn", "engine.api:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      <<: *otel
+      PORT: "8002"
+      DATABASE_URL: postgresql://content:${DB_PASSWORD_CONTENT}@postgres:5432/content
+      REDIS_URL: redis://redis:6379/1
+      GATEWAY_URL: http://llm-gateway:8000
+      GATEWAY_KEY: ${VK_CONTENT_ENGINE}
+      CATALOG_MCP_URL: http://catalog-mcp:8001/mcp
+      CATALOG_TOKEN: ${CATALOG_TOKEN_ENGINE}
+      EVAL_REPORTS: /app/evals/reports
+      SERVICE_TOKENS: >-
+        {"web-reviewer": {"token": "${ENGINE_TOKEN_WEB}", "scopes": ["content:read", "content:request", "content:review"]},
+         "evals": {"token": "${ENGINE_TOKEN_EVALS}", "scopes": ["content:read", "content:evaluate"]}}
+    volumes:
+      - ./evals/reports:/app/evals/reports:ro
+    depends_on:
+      catalog-mcp: { condition: service_started }
+    ports: ["127.0.0.1:8002:8002"]
+
+volumes:
+  pgdata:
