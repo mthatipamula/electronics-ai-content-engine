@@ -157,4 +157,11 @@ async def list_categories() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@mcp.custom_route("/healthz", methods=["GET"])
+async def healthz(_request):
+    from starlette.responses import JSONResponse
+
+    return JSONResponse({"ok": True})
+
+
 app = mcp.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")  # noqa: S104 - in a container

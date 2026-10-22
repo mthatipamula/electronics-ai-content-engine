@@ -22,7 +22,7 @@ def setup(service_name: str) -> None:
             structlog.processors.JSONRenderer(),
         ],
     )
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or None
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
     if endpoint:
         provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))

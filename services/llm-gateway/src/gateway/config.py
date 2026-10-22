@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql://gateway:gateway@localhost:5432/gateway"
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str | None = "redis://localhost:6379/0"   # empty: in-memory cache and rate limits
     provider: str = "mock"                      # "azure" or "mock" (offline tests and CI)
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: str | None = None     # local only; in Azure the managed identity is used

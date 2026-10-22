@@ -1,0 +1,36 @@
+name: Evaluate (Azure OpenAI)
+
+# Runs the gold dataset against real models and fails on a quality regression. Manual, because it spends money
+# (about $0.03 a run). Needs repository secrets AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY, and variables
+# AZURE_OPENAI_FAST_DEPLOYMENT / AZURE_OPENAI_QUALITY_DEPLOYMENT.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: packages/common/src:services/llm-gateway/src:services/catalog-mcp/src:services/content-engine/src
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with: { version: "0.13.4" }
+      - run: uv sync --frozen
+      - name: Configure the stack for Azure OpenAI
+        env:
+          ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          ./scripts/init-env.sh
+          sed -i "s|^LLM_PROVIDER=.*|LLM_PROVIDER=azure|; s|^AZURE_OPENAI_ENDPOINT=.*|AZURE_OPENAI_ENDPOINT=$ENDPOINT|; s|^AZURE_OPENAI_API_KEY=.*|AZURE_OPENAI_API_KEY=$KEY|" .env
+          sed -i "s|^AZURE_OPENAI_FAST_DEPLOYMENT=.*|AZURE_OPENAI_FAST_DEPLOYMENT=${{ vars.AZURE_OPENAI_FAST_DEPLOYMENT }}|; s|^AZURE_OPENAI_QUALITY_DEPLOYMENT=.*|AZURE_OPENAI_QUALITY_DEPLOYMENT=${{ vars.AZURE_OPENAI_QUALITY_DEPLOYMENT }}|" .env
+      - run: docker compose up -d --build
+      - run: timeout 180 bash -c 'until curl -sf http://localhost:8002/healthz; do sleep 3; done'
+      - run: uv run --no-sync python -m evals.run
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: eval-report, path: evals/reports/*.json }

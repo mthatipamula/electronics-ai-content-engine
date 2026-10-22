@@ -90,5 +90,13 @@ services:
       catalog-mcp: { condition: service_started }
     ports: ["127.0.0.1:8002:8002"]
 
+  web:   # review UI; nginx adds the API token server-side
+    build: { context: ./web }
+    environment:
+      ENGINE_URL: http://content-engine:8002
+      ENGINE_TOKEN_WEB: ${ENGINE_TOKEN_WEB}
+    depends_on: [content-engine]
+    ports: ["127.0.0.1:5173:8080"]
+
 volumes:
   pgdata:

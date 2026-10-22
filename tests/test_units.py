@@ -72,3 +72,17 @@ def test_strict_schema_shape():
     body = json.dumps(s)
     assert s["strict"] and "minLength" not in body and '"additionalProperties": false' in body
     assert set(s["schema"]["required"]) == {"claims", "unsupported_count", "score", "explanation"}
+
+
+async def test_memory_kv_expiry_and_counters():
+    import asyncio
+
+    from gateway.kv import MemoryKV
+
+    kv = MemoryKV()
+    assert await kv.incr("n") == 1 and await kv.incr("n") == 2
+    await kv.set("k", "v", ex=1)
+    assert await kv.get("k") == "v"
+    kv.data["k"] = ("v", 0)  # force expiry
+    assert await kv.get("k") is None
+    await asyncio.sleep(0)
