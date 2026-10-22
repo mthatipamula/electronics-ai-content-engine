@@ -13,12 +13,12 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-import redis.asyncio as redis
 from common import pii, telemetry
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
 
+from . import kv
 from .config import plan, routing, settings
 from .providers import ContentFiltered, Retryable, provider
 from .schemas import ChatRequest, ChatResponse, EmbeddingRequest, EmbeddingResponse, KeyRequest, Usage
@@ -33,7 +33,7 @@ log = telemetry.log
 async def lifespan(app: FastAPI):
     s = settings()
     app.state.store = await Store.connect(s.database_url)
-    app.state.cache = redis.from_url(s.redis_url, decode_responses=True)
+    app.state.cache = kv.connect(s.redis_url)
     app.state.provider = provider()
     for spec in json.loads(os.getenv("BOOTSTRAP_VIRTUAL_KEYS", "[]")):
         await app.state.store.create_key(spec["app"], spec["budget"], spec["tiers"], spec["key"])

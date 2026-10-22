@@ -81,22 +81,29 @@ async def connect(dsn: str) -> asyncpg.Pool:
 
 
 async def seed(pool: asyncpg.Pool, gateway_url: str, gateway_key: str, embedded_with: str) -> None:
-    """Loads the demo catalog and embeds its datasheets; re-embeds if the embedding model changed, because
-    vectors from different models aren't comparable."""
-    current = await pool.fetch("SELECT DISTINCT embedded_with FROM datasheet_chunks")
-    if current and [r["embedded_with"] for r in current] == [embedded_with]:
-        return
-    if current:
-        log.info("embedding model changed; re-embedding datasheets", previous=[r["embedded_with"] for r in current],
-                 now=embedded_with)
-        await pool.execute("DELETE FROM datasheet_chunks")
+    """Brings the catalog in line with the seed data: upserts products, removes stale ones nothing references,
+    and embeds datasheets that have no vectors yet. Vectors from a different embedding model are not comparable,
+    so a model change re-embeds everything."""
     rows = products()
-    async with pool.acquire() as c:
+    async with pool.acquire() as c, c.transaction():
         await c.executemany(
             "INSERT INTO products (sku, brand, category, name, specs, datasheet) VALUES ($1, $2, $3, $4, $5, $6) "
-            "ON CONFLICT (sku) DO NOTHING",
+            "ON CONFLICT (sku) DO UPDATE SET brand = EXCLUDED.brand, category = EXCLUDED.category, "
+            "name = EXCLUDED.name, specs = EXCLUDED.specs, datasheet = EXCLUDED.datasheet",
             [(p["sku"], p["brand"], p["category"], p["name"], json.dumps(p["specs"]), p["datasheet"]) for p in rows])
-    pieces = [(p["sku"], i, t) for p in rows for i, t in enumerate(chunk(p["datasheet"]))]
+        skus = [p["sku"] for p in rows]
+        await c.execute("DELETE FROM datasheet_chunks WHERE sku <> ALL($1::text[])", skus)
+        await c.execute("DELETE FROM products p WHERE sku <> ALL($1::text[]) AND NOT EXISTS "
+                        "(SELECT 1 FROM content_drafts d WHERE d.sku = p.sku)", skus)
+        stale = await c.fetchval("SELECT count(*) FROM datasheet_chunks WHERE embedded_with IS DISTINCT FROM $1",
+                                 embedded_with)
+        if stale:
+            log.info("embedding model changed; re-embedding datasheets", now=embedded_with)
+            await c.execute("DELETE FROM datasheet_chunks")
+        done = {r["sku"] for r in await c.fetch("SELECT DISTINCT sku FROM datasheet_chunks")}
+    pieces = [(p["sku"], i, t) for p in rows if p["sku"] not in done for i, t in enumerate(chunk(p["datasheet"]))]
+    if not pieces:
+        return
     async with httpx.AsyncClient(timeout=60, headers={"Authorization": f"Bearer {gateway_key}"}) as http:
         for start in range(0, len(pieces), 64):
             batch = pieces[start:start + 64]
@@ -109,7 +116,7 @@ async def seed(pool: asyncpg.Pool, gateway_url: str, gateway_key: str, embedded_
                     "VALUES ($1, $2, $3, $4, $5, $6)",
                     [(sku, i, t, _flag(t), vec, embedded_with)
                      for (sku, i, t), vec in zip(batch, r.json()["data"], strict=True)])
-    log.info("catalog seeded", products=len(rows), chunks=len(pieces))
+    log.info("catalog seeded", products=len(rows), embedded_chunks=len(pieces))
 
 
 def _flag(text: str) -> str | None:

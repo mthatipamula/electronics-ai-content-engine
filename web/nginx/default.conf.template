@@ -1,0 +1,17 @@
+# The service token is added here, server-side; the browser never sees it. In Azure, Entra ID sign-in
+# (Container Apps authentication) sits in front of this and the token comes from Key Vault.
+server {
+  listen 8080;
+  root /usr/share/nginx/html;
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options DENY always;
+  add_header Referrer-Policy no-referrer always;
+
+  location /api/ {
+    proxy_pass ${ENGINE_URL};
+    proxy_set_header Authorization "Bearer ${ENGINE_TOKEN_WEB}";
+    proxy_read_timeout 180s;
+  }
+  location /assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
+  location / { try_files $uri /index.html; }
+}

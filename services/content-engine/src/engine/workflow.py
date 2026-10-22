@@ -83,7 +83,7 @@ def build(gateway: Gateway, tools: CatalogTools, spend: Spend, guidance_for) -> 
         for q in (f"{name} specifications performance", "typical applications and use cases",
                   "materials construction compliance and installation"):
             r = await tools.search_datasheet(state["sku"], q, k=3)
-            withheld += r["withheld"]
+            withheld += [w for w in r["withheld"] if w["chunk_id"] not in {x["chunk_id"] for x in withheld}]
             for p in r["passages"]:
                 if p["chunk_id"] not in seen:
                     seen.add(p["chunk_id"])

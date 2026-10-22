@@ -62,12 +62,32 @@ names in `.env`. The catalog re-embeds automatically when the embedding model ch
 | http://localhost:8000/docs | LLM gateway API |
 | http://localhost:6006 | Phoenix traces |
 
-## Results on Azure OpenAI (gpt-4.1-mini)
+## Review UI
 
-14 jobs across 7 products and two channels: 13 passed every check on the first attempt, faithfulness 1.0, about
-$0.002 per product.
+`http://localhost:5173`: a queue of drafts by status; a review screen with the product data and datasheet passages
+next to the editable draft, guardrail findings, the judge's claim-by-claim verdict, and every model call with its
+tier and cost; approve, edit-and-approve or reject with a reason (which becomes guidance for future drafts); a quality
+and cost dashboard from the gateway ledger; and the latest evaluation report. The browser never holds an API token:
+the web server adds it when proxying `/api`.
 
-## Roadmap
+![Review screen](docs/screenshots/02-review.png)
 
-React review UI, evaluation pipeline with a gold dataset and CI regression thresholds, Bicep for Azure Container Apps
-with Managed Identity and Key Vault, GitHub Actions with Argo CD.
+## Evaluation
+
+`make eval` runs `evals/gold.jsonl` (12 cases across all product categories, both channels, and a poisoned
+datasheet) through the real pipeline and scores it, mostly deterministically: structured-output validity,
+guardrail pass rate, spec accuracy (every number in the copy exists in the source), required facts mentioned,
+forbidden claims, injection blocked, plus LLM-judge faithfulness, cost and p95 latency. `evals/thresholds.json`
+holds the regression gates; a failed gate exits non-zero.
+
+Latest run on Azure OpenAI (gpt-4.1-mini): all 9 gates passed, 12/12 first-attempt success, 100% spec accuracy and
+required facts, no forbidden claims, injection blocked, $0.0018 per product, p95 8.4 s.
+
+## CI/CD and Azure
+
+- `ci.yml` (every PR): ruff, unit tests, web build, Bicep build and lint, and the full Docker stack with the mock
+  model plus the end-to-end smoke test.
+- `eval.yml` (manual): the gold-set evaluation against Azure OpenAI; uploads the report; fails on regressions.
+- `deploy.yml` (manual): keyless OIDC login, images built in ACR, Bicep deployment.
+- `infra/azure/main.bicep`: Container Apps with a managed identity per service, Key Vault references, PostgreSQL
+  with pgvector, Service Bus, and passwordless access to Azure OpenAI. See [infra/azure/README.md](infra/azure/README.md).

@@ -92,9 +92,10 @@ class Store:
 
     async def list_jobs(self, status: str | None, limit: int) -> list[dict]:
         rows = await self.pool.fetch(
-            "SELECT id, sku, category, channel, status, attempts, cost_usd, judge->>'score' AS faithfulness, "
-            "requested_by, reviewed_by, created_at, updated_at FROM jobs WHERE ($1::text IS NULL OR status = $1) "
-            "ORDER BY created_at DESC LIMIT $2", status, limit)
+            "SELECT id, sku, category, channel, status, attempts, cost_usd, "
+            "(judge->>'score')::float AS faithfulness, COALESCE((judge->>'needs_attention')::bool, false) "
+            "AS needs_attention, content->>'title' AS title, requested_by, reviewed_by, created_at, updated_at "
+            "FROM jobs WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC LIMIT $2", status, limit)
         return [_row(r) for r in rows]
 
     async def decide(self, job_id: str, status: str, **fields: Any) -> dict | None:

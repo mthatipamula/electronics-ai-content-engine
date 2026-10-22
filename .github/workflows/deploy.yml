@@ -1,0 +1,37 @@
+name: Deploy to Azure
+
+# Manual, because it creates and updates billable resources. Keyless: GitHub's OIDC token is exchanged for an Entra ID
+# token through a federated credential (no client secret). Configure variables AZURE_CLIENT_ID, AZURE_TENANT_ID,
+# AZURE_SUBSCRIPTION_ID, RESOURCE_GROUP, OPENAI_ACCOUNT and the secrets listed in infra/azure/README.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy infrastructure, images and apps
+        env:
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+          OPENAI_ACCOUNT: ${{ vars.OPENAI_ACCOUNT }}
+          IMAGE_TAG: ${{ github.sha }}
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+          VK_CONTENT_ENGINE: ${{ secrets.VK_CONTENT_ENGINE }}
+          VK_CATALOG: ${{ secrets.VK_CATALOG }}
+          GATEWAY_ADMIN_TOKEN: ${{ secrets.GATEWAY_ADMIN_TOKEN }}
+          CATALOG_TOKEN_ENGINE: ${{ secrets.CATALOG_TOKEN_ENGINE }}
+          CATALOG_TOKEN_READONLY: ${{ secrets.CATALOG_TOKEN_READONLY }}
+          ENGINE_TOKEN_WEB: ${{ secrets.ENGINE_TOKEN_WEB }}
+          ENGINE_TOKEN_EVALS: ${{ secrets.ENGINE_TOKEN_EVALS }}
+        run: ./infra/azure/deploy.sh

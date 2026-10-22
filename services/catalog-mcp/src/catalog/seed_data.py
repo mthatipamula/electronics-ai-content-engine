@@ -51,7 +51,8 @@ def _cable_assemblies() -> list[dict]:
         cable = "RG-316" if "SMA" in a + b else "RG-58"
         loss = {"RG-316": 0.85, "RG-58": 0.45}[cable]
         ghz = 6 if "BNC" not in a else 4
-        sku = f"NFC-{a[:3].strip().upper()}{b[:3].strip().upper()}-{cable.replace('-', '')}-{int(length * 100):04d}"
+        code = lambda c: c.split()[0].upper()  # "N Male" -> "N", "SMA Male" -> "SMA"  # noqa: E731
+        sku = f"NFC-{code(a)}{code(b)}-{cable.replace('-', '')}-{int(length * 100):04d}"
         rows.append({
             "sku": sku, "brand": BRANDS["CAB"], "category": "RF Cable Assemblies",
             "name": f"{a} to {b} Cable Assembly, {cable}, {length:g} m",
